@@ -1,0 +1,58 @@
+#!/usr/bin/env python
+#The line above is important so that this file is interpreted with Python when running it.
+
+# Import of python modules.
+import time # use of sleep.
+
+# import of relevant libraries.
+import rospy # module for ROS APIs
+from geometry_msgs.msg import PoseWithCovarianceStamped
+import tf # used for quaternion calculations
+
+# Constants
+NUM_ROBOTS = 3 # number of robots in the full system
+DEFAULT_INITIAL_POSE_TOPIC = "/initialpose" # topic for which initial pose is published by bidders
+
+class TfCoordination():
+    def __init__(self):
+        """Constructor."""
+        # Number of robots for current simulation.
+        self.num_robots = NUM_ROBOTS
+
+        # Broadcaster for setting world coordinates for bots
+        self._tf_br = tf.TransformBroadcaster()
+
+        # Subscribe to topics for bidder' odom publisher 
+        for i in range(0, self.num_robots):
+            msub = rospy.Subscriber("/robot_" + str(i) + DEFAULT_INITIAL_POSE_TOPIC, PoseWithCovarianceStamped, self._init_pose_callback, queue_size=3)
+            time.sleep(1)
+
+        # Convert all bidder' local coordinates to world for interpretation by auctioneer
+        self.bot_poses = dict()
+        while not rospy.is_shutdown():
+            for bot in self.bot_poses.keys():
+                self._tf_br.sendTransform(self.bot_poses[bot][0], self.bot_poses[bot][1], rospy.Time.now(), bot, "world")
+
+    def _init_pose_callback(self, msg):
+        """Callback that receives the position (x,y,yaw,etc.) for all subscribed bots"""
+        mx = msg.pose.pose.position.x
+        my = msg.pose.pose.position.y
+        quaternion = (msg.pose.pose.orientation.x,msg.pose.pose.orientation.y,msg.pose.pose.orientation.z,msg.pose.pose.orientation.w)
+        topic = msg._connection_header["topic"]
+        self.bot_poses[topic[1:8]] = [(mx, my, 0.0), quaternion]
+
+def main():
+    """Main function."""
+    # 1st. initialization of node.
+    rospy.init_node("tf_coordination")
+
+    # Sleep for a few seconds to wait for the registration.
+    rospy.sleep(2)
+
+    # Initialization of the class 
+    tf_coordination = TfCoordination()
+
+
+if __name__ == "__main__":
+    """Run the main function."""
+    main()

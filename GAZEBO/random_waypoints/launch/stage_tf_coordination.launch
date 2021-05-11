@@ -1,0 +1,110 @@
+<launch>
+  <master auto="start"/>
+
+  <arg name="model" default="$(env TURTLEBOT3_MODEL)" doc="model type [burger, waffle, waffle_pi]"/>
+  <arg name="first_tb3"  default="robot_0"/>
+  <arg name="second_tb3" default="robot_1"/>
+  <arg name="third_tb3"  default="robot_2"/>
+  <arg name="fourth_tb3"  default="robot_3"/>
+  <arg name="fifth_tb3"  default="robot_4"/>
+  <arg name="sixth_tb3"  default="robot_5"/>
+  <arg name="seventh_tb3"  default="robot_6"/>
+  <arg name="eighth_tb3"  default="robot_7"/>
+  <arg name="ninth_tb3"  default="robot_8"/>
+  <arg name="tenth_tb3"  default="robot_9"/>
+
+  <arg name="num_bots"  default="10"/>
+
+  <arg name="world_name" value="$(find tf_coordination)/worlds/tf_coordination.world"/>    
+  <node name="stageros" pkg="stage_ros" type="stageros" args="$(arg world_name)" output="screen"/>
+
+  <group ns = "$(arg first_tb3)">
+    <param name="robot_description" command="$(find xacro)/xacro --inorder $(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro" />
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
+      <param name="publish_frequency" type="double" value="50.0" />
+      <param name="tf_prefix" value="$(arg first_tb3)" />
+    </node>
+    <node name="tf_coordination" pkg="tf_coordination" type="tf_coordination" args="$(arg num_bots)"/>
+  </group>
+
+  <group ns = "$(arg second_tb3)">
+    <param name="robot_description" command="$(find xacro)/xacro --inorder $(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro" />
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
+      <param name="publish_frequency" type="double" value="50.0" />
+      <param name="tf_prefix" value="$(arg second_tb3)" />
+    </node>
+    <node name="tf_coordination" pkg="tf_coordination" type="tf_coordination" args="$(arg num_bots)"/>
+  </group>
+
+  <group ns = "$(arg third_tb3)">
+    <param name="robot_description" command="$(find xacro)/xacro --inorder $(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro" />
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
+      <param name="publish_frequency" type="double" value="50.0" />
+      <param name="tf_prefix" value="$(arg third_tb3)" />
+    </node>
+    <node name="tf_coordination" pkg="tf_coordination" type="tf_coordination" args="$(arg num_bots)"/>
+  </group>
+
+  <group ns = "$(arg fourth_tb3)">
+    <param name="robot_description" command="$(find xacro)/xacro --inorder $(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro" />
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
+      <param name="publish_frequency" type="double" value="50.0" />
+      <param name="tf_prefix" value="$(arg fourth_tb3)" />
+    </node>
+    <node name="tf_coordination" pkg="tf_coordination" type="tf_coordination" args="$(arg num_bots)"/>
+  </group>
+
+  <group ns = "$(arg fifth_tb3)">
+    <param name="robot_description" command="$(find xacro)/xacro --inorder $(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro" />
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
+      <param name="publish_frequency" type="double" value="50.0" />
+      <param name="tf_prefix" value="$(arg fifth_tb3)" />
+    </node>
+    <node name="tf_coordination" pkg="tf_coordination" type="tf_coordination" args="$(arg num_bots)"/>
+  </group>
+
+  <group ns = "$(arg sixth_tb3)">
+    <param name="robot_description" command="$(find xacro)/xacro --inorder $(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro" />
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
+      <param name="publish_frequency" type="double" value="50.0" />
+      <param name="tf_prefix" value="$(arg sixth_tb3)" />
+    </node>
+    <node name="tf_coordination" pkg="tf_coordination" type="tf_coordination" args="$(arg num_bots)"/>
+  </group>
+
+  <group ns = "$(arg seventh_tb3)">
+    <param name="robot_description" command="$(find xacro)/xacro --inorder $(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro" />
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
+      <param name="publish_frequency" type="double" value="50.0" />
+      <param name="tf_prefix" value="$(arg seventh_tb3)" />
+    </node>
+    <node name="tf_coordination" pkg="tf_coordination" type="tf_coordination" args="$(arg num_bots)"/>
+  </group>
+
+  <group ns = "$(arg eighth_tb3)">
+    <param name="robot_description" command="$(find xacro)/xacro --inorder $(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro" />
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
+      <param name="publish_frequency" type="double" value="50.0" />
+      <param name="tf_prefix" value="$(arg eighth_tb3)" />
+    </node>
+    <node name="tf_coordination" pkg="tf_coordination" type="tf_coordination" args="$(arg num_bots)"/>
+  </group>
+
+  <group ns = "$(arg ninth_tb3)">
+    <param name="robot_description" command="$(find xacro)/xacro --inorder $(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro" />
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
+      <param name="publish_frequency" type="double" value="50.0" />
+      <param name="tf_prefix" value="$(arg ninth_tb3)" />
+    </node>
+    <node name="tf_coordination" pkg="tf_coordination" type="tf_coordination" args="$(arg num_bots)"/>
+  </group>
+
+  <group ns = "$(arg tenth_tb3)">
+    <param name="robot_description" command="$(find xacro)/xacro --inorder $(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro" />
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
+      <param name="publish_frequency" type="double" value="50.0" />
+      <param name="tf_prefix" value="$(arg tenth_tb3)" />
+    </node>
+    <node name="tf_coordination" pkg="tf_coordination" type="tf_coordination" args="$(arg num_bots)"/>
+  </group>
+</launch>

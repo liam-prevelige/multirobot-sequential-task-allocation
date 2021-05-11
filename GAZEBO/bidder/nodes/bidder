@@ -1,0 +1,251 @@
+#!/usr/bin/env python
+#The line above is important so that this file is interpreted with Python when running it.
+
+# Import of python modules.
+import math # use of pi.
+import time # use of sleep.
+import actionlib
+from collections import deque
+
+# import of relevant libraries.
+import rospy # module for ROS APIs
+from geometry_msgs.msg import Twist # message type for cmd_vel
+from sensor_msgs.msg import LaserScan # message type for scan
+from nav_msgs.msg import Odometry # message type for groud_control
+from geometry_msgs.msg import PoseWithCovarianceStamped
+from std_msgs.msg import String
+
+from bidder.srv import ServiceRegistration, ServiceWaypoints, ServiceWaypointsResponse, ServiceAwardTask, ServiceAwardTaskResponse
+from coordination_action.msg import MoveCommandResult
+
+import tf # used for quaternion calculations
+
+# Constants.
+FREQUENCY = 10 #Hz.
+LINEAR_VELOCITY = 0.2 # m/s
+ANGULAR_VELOCITY = math.pi/4 # rad/s
+MAX_DISTANCE = 0.2 # margin for error for distance from a coordinate
+UNINIT_X_LOC = -999999 # default value for x coordinate when hasn't been updated by odom callback
+UNINIT_Y_LOC = -999999 # default value for y coordinate when hasn't been updated by odom callback
+DEFAULT_REGISTER_TOPIC = "/robot_0/register_bot" # default topic where auctioneer will look to register bot
+
+class Bidder():
+    def __init__(self):
+        """Constructor."""
+
+        self.publish_positions = True   # publish initial position once
+
+        # Publisher to carry out movement of bot
+        cmd_topic = str(rospy.get_namespace()) + "cmd_vel"
+
+        # Publisher to push initial position to topic for conversion to world coordinates by tf
+        initpose_topic = str(rospy.get_namespace()) + "initialpose"
+        self._init_position_pub = rospy.Publisher(initpose_topic, PoseWithCovarianceStamped, queue_size=1)
+        # Publisher for movement of robot
+        self._cmd_pub = rospy.Publisher(cmd_topic, Twist, queue_size=1)
+
+        # Subscriber listening to message to begin movement
+        self._init_action_sub = rospy.Subscriber(str(rospy.get_namespace()) + "initiation", String, self._init_action_cb, queue_size=1)
+        
+        # Create service to get target waypoints and return bids to auctioneer
+        self.bot_name = str(rospy.get_namespace())[1:8]     # assumes less than 10 robots are present, with name robot_x
+        bid_topic = "/" + self.bot_name + "/make_bid"       
+        waypoints_bid_service = rospy.Service(bid_topic, ServiceWaypoints, self._handle_send_bid)
+
+        # Create service to determine which waypoints have been won as a task
+        award_topic = "/" + self.bot_name + "/award_bid"          
+        task_allocation_service = rospy.Service(award_topic, ServiceAwardTask, self._handle_allocate_task)
+        self.assigned_task_coords = []  # track which tasks have been won
+
+        # Get local positions from odom
+        self._ground_sub = rospy.Subscriber(str(rospy.get_namespace()) + "odom", Odometry, self._odom_callback, queue_size=1)
+        
+        # Impossible starting position, check if initialized in callback
+        self.curr_x = UNINIT_X_LOC
+        self.curr_y = UNINIT_Y_LOC
+
+        while not rospy.is_shutdown():
+            pass
+
+    def register_bot(self):
+        """Add bot name to the registry of auctioneer using service."""
+        """Assumption: robot_0 is the one and only auctioneer."""
+
+        rospy.wait_for_service()
+        try:
+            registered_bot = rospy.ServiceProxy(DEFAULT_REGISTER_TOPIC, ServiceRegistration)
+            is_success = registered_bot(str(rospy.get_namespace())[1:8])
+            if not is_success.success:
+                self._init_position_pub.publish(self.initpose)
+                rospy.sleep(1)
+                self.register_bot()
+        except rospy.ServiceException as e:
+            pass
+    
+    def _handle_send_bid(self, req):
+        """Callback for service asking for bid, return value for waypoint"""
+        waypoints = req.waypoint
+        bid_values = []
+        bid_values.append(self.get_bid(waypoints))
+        return ServiceWaypointsResponse(bid_values)
+    
+    def get_bid(self, waypoint):
+        """Determine bid using distance from given waypoint"""
+        x = waypoint[0]
+        y = waypoint[1]
+
+        # wait for starting coordinates to be initialized
+        if self.curr_x == UNINIT_X_LOC or self.curr_y == UNINIT_Y_LOC:
+            rospy.sleep(.1)
+
+        # determine bid based on distance from last assigned coordinate
+        if len(self.assigned_task_coords) == 0:
+            dist_x = self.curr_x - x
+            dist_y = self.curr_y - y
+        else:
+            dist_x = self.assigned_task_coords[len(self.assigned_task_coords)-1][0] - x
+            dist_y = self.assigned_task_coords[len(self.assigned_task_coords)-1][1] - y
+
+        return math.sqrt(dist_x**2 + dist_y**2)
+
+    def _handle_allocate_task(self, req):
+        """Accept assigned waypoints and store for later movement  """
+        task = req.task
+        self.assigned_task_coords.append(task)
+        return True
+
+    def _odom_callback(self, msg):
+        """Get local positional information and publish if the robot has yet to move or is at a vertex"""
+        initpose = PoseWithCovarianceStamped()      # populated with position and orientation information for use by tf
+        initpose.header.stamp = rospy.get_rostime()
+        initpose.header.frame_id = str(rospy.get_namespace())[1:8]
+        initpose.pose.pose.position.x = msg.pose.pose.position.x
+        initpose.pose.pose.position.y = msg.pose.pose.position.y
+        initpose.pose.pose.position.z = msg.pose.pose.position.z
+        
+        # store positional information to local variables for easier access
+        self.curr_x = msg.pose.pose.position.x     
+        self.curr_y = msg.pose.pose.position.y
+
+        initpose.pose.pose.orientation.w = msg.pose.pose.orientation.x
+        initpose.pose.pose.orientation.x = msg.pose.pose.orientation.y
+        initpose.pose.pose.orientation.y = msg.pose.pose.orientation.z
+        initpose.pose.pose.orientation.z = msg.pose.pose.orientation.w
+
+        quaternion = (msg.pose.pose.orientation.x,msg.pose.pose.orientation.y,msg.pose.pose.orientation.z,msg.pose.pose.orientation.w)
+        euler = tf.transformations.euler_from_quaternion(quaternion)
+        self.curr_yaw = euler[2]
+
+        if self.publish_positions:
+            self.initpose = initpose
+            self._init_position_pub.publish(initpose)
+            self.register_bot()     # register with auctioneer using service when initial position has been sent
+            self.publish_positions = False
+    
+    def _init_action_cb(self, msg):
+        """Callback for subscriber to topic of auctioneer's notification to begin looking for movement goals"""
+        if msg.data == "begin":
+            for waypoint in self.assigned_task_coords:
+                self.move_to_coordinates(waypoint[0], waypoint[1])
+
+    def move_forward(self, distance, velocity):
+        """Function to move_forward for a given distance."""
+        # Rate at which to operate the while loop.
+        rate = rospy.Rate(FREQUENCY)
+
+        # Setting velocities. 
+        twist_msg = Twist()
+        twist_msg.linear.x = velocity
+        start_time = rospy.get_rostime()
+        duration = rospy.Duration(distance/twist_msg.linear.x)
+
+        # Loop.
+        while not rospy.is_shutdown():
+            # Check if traveled of given distance based on time.
+            if rospy.get_rostime() - start_time >= duration:
+                break
+
+            self._cmd_pub.publish(twist_msg)
+
+            # Sleep to keep the set publishing frequency.
+            rate.sleep()
+
+        # Traveled the required distance, stop.
+        self.stop()
+        
+    def rotate_in_place(self, rotation_angle, counterclockwise):
+        """
+        Rotate in place the robot of rotation_angle (rad) based on fixed velocity.
+        """
+        twist_msg = Twist()
+        twist_msg.angular.z = ANGULAR_VELOCITY
+        
+        # Clockwise requires negative angular velocity
+        if not counterclockwise:
+            twist_msg.angular.z = abs(twist_msg.angular.z)  * -1
+        
+        duration = rotation_angle / abs(twist_msg.angular.z)
+        start_time = rospy.get_rostime()
+        rate = rospy.Rate(FREQUENCY)
+        while not rospy.is_shutdown():
+            # Check if done
+            if rospy.get_rostime() - start_time >= rospy.Duration(duration):
+                break
+                
+            # Publish message.
+            self._cmd_pub.publish(twist_msg)
+            
+            rate.sleep()
+
+        self.stop()
+
+    def stop(self):
+        """Stop the robot."""
+        twist_msg = Twist()
+        self._cmd_pub.publish(twist_msg)
+    
+    def move_to_coordinates(self, x, y, yaw=0):
+        """Move the robot to a specified position (and, if desired, yaw)"""
+        # Distance from current position to desired
+        self.dist_x = x-self.curr_x
+        self.dist_y = y-self.curr_y
+        
+        # Determine which way is faster for the robot to turn
+        counterclockwise = True
+        angle_to_point = math.atan2(self.dist_y, self.dist_x)
+        if angle_to_point - self.curr_yaw < 0:
+            counterclockwise = False
+
+        # Continue rotating until the yaw has achieved the correct angle to move forward to target position
+        while not rospy.is_shutdown() and abs(angle_to_point - self.curr_yaw)%(math.pi*2) > 0.04:
+            self.rotate_in_place(0.01, counterclockwise)
+        
+        # Move forward the approximate distance using distance formula
+        self.move_forward(math.sqrt(self.dist_x**2 + self.dist_y**2), LINEAR_VELOCITY)
+
+        if math.sqrt((x-self.curr_x)**2 + (y-self.curr_y)**2) > MAX_DISTANCE:     # if still too far, recursively call the movement until "close enough"
+            self.move_to_coordinates(x,y,yaw)
+        else:
+            # update instance variables for use in callbacks of actions
+            self.arrived = True
+            self.publish_positions = True
+            return self.publish_positions
+
+def main():
+    """Main function."""
+    # 1st. initialization of node.
+    rospy.init_node("bidder")
+
+    # Sleep for a few seconds to wait for the registration.
+    rospy.sleep(2)
+
+    # Initialization of the class 
+    bidder = Bidder()
+
+    # If interrupted, send a stop command.
+    rospy.on_shutdown(bidder.stop)
+
+if __name__ == "__main__":
+    """Run the main function."""
+    main()
+

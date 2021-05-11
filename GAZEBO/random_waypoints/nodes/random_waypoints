@@ -1,0 +1,72 @@
+#!/usr/bin/env python
+#The line above is important so that this file is interpreted with Python when running it.
+
+# Import of python modules.
+from random import randint
+
+# import of relevant libraries.
+import rospy # module for ROS APIs
+from auctioneer.srv import ServiceRandomWaypoint  # use service to send waypoints to auctioneer
+
+# Constants
+MAX_X = 10 # max range on x axis for waypoint
+MAX_Y = 10 # max range on y axis for waypoint
+MIN_DISTANCE = 1 # min distance between each waypoint
+WAYPOINTS_TOPIC = "/waypoints/" # default topic published to by random_waypoints node
+
+class RandomWaypoints():
+    def __init__(self):
+        """Constructor."""
+        # Range of coordinate plane for points to be produced
+        self.length_x = MAX_X
+        self.length_y = MAX_Y
+
+        self.waypoint_topic = WAYPOINTS_TOPIC
+
+        self.min_distance = MIN_DISTANCE   # ensure bots aren't too close
+        
+        # Track which points have been allocated
+        self.waypoint_map = [[0 for x in range(0, MAX_X+self.min_distance, self.min_distance)] for x in range(0, MAX_Y+self.min_distance, self.min_distance)]
+        self.generate_random_waypoints()
+    
+    def generate_random_waypoints(self):
+        """Use service to send waypoints to auctioneer, confirming receipt and stopping upon request"""
+        rospy.wait_for_service(self.waypoint_topic)
+
+        while not rospy.is_shutdown():
+            x_idx = randint(0, MAX_X)
+            y_idx = randint(0, MAX_Y)
+
+            # ensure no overlapping points
+            while self.waypoint_map[x_idx][y_idx] != 0:
+                x_idx = randint(0, MAX_X)
+                y_idx = randint(0, MAX_Y)
+
+            try:
+                x = x_idx*self.min_distance
+                y = y_idx*self.min_distance
+                rand_waypoint_service = rospy.ServiceProxy(self.waypoint_topic, ServiceRandomWaypoint)
+                result = rand_waypoint_service([x,y])
+                if result.nextaction == "success":
+                    self.waypoint_map[x_idx][y_idx] = 1 # successful receipt, send more
+                elif result.nextaction == "break":
+                    break   # auctioneer no longer needs waypoints
+            except rospy.ServiceException as e:
+                print(e.args)
+                pass
+
+def main():
+    """Main function."""
+    # 1st. initialization of node.
+    rospy.init_node("random_waypoints")
+
+    # Sleep for a few seconds to wait for the registration.
+    rospy.sleep(2)
+
+    # Initialization of the class 
+    random_waypoints = RandomWaypoints()
+
+
+if __name__ == "__main__":
+    """Run the main function."""
+    main()

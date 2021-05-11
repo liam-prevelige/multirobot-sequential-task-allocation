@@ -1,0 +1,145 @@
+#!/usr/bin/env python
+#The line above is important so that this file is interpreted with Python when running it.
+
+# Import of python modules.
+import time # use of sleep.
+
+# import of relevant libraries.
+import rospy # module for ROS APIs
+
+from auctioneer.srv import ServiceRegistration, ServiceRegistrationResponse, ServiceWaypoints, ServiceAwardTask, ServiceRandomWaypoint, ServiceRandomWaypointResponse
+from std_msgs.msg import String  # used to notify bots to begin
+import tf # used for quaternion calculations
+import sys # access num bots from stdout
+
+# Constants
+REGISTER_TOPIC = "register_bot" # default topic searched for by bidder registration
+WAYPOINTS_TOPIC = "/waypoints/" # default topic published to by random_waypoints node
+
+class Auctioneer():
+    def __init__(self, num_bots):
+        """Constructor."""
+
+        # Instance variables
+        self.num_bots = self.num_waypoints = num_bots     # number of robots=waypoints.
+        self.bot_locs = dict()      # all bots current world locations
+        self.registered_bots = list()       # all bots that have registered with leader
+        self.relative_positions = list()    # used to store which bot is in which position, counterclockwise from leftmost vertex
+        self.bots_bids = dict()
+
+        # Listen for tf broadcasting world coordinates of bots
+        self.listener = tf.TransformListener()
+        # Open a service for bots to register with leader
+        self.register_service = rospy.Service(REGISTER_TOPIC, ServiceRegistration, self._handle_add_robot)
+        
+
+        # Subscribe to the random waypoints
+        self._waypoint_service = rospy.Service(WAYPOINTS_TOPIC, ServiceRandomWaypoint, self._handle_waypoints)
+        self.bot_assigned_waypoints = dict()
+
+        # Only get waypoints if not all bots have task assigned
+        self.more_waypoints = True
+
+        while not rospy.is_shutdown():
+            pass
+
+    def _handle_waypoints(self, msg):
+        """Callback to get waypoints from random waypoint generator and process bids"""
+        self.generated_waypoint = msg.waypoint
+
+        # Wait until all bots have registered
+        while not rospy.is_shutdown() and len(self.registered_bots) != self.num_bots:
+            rospy.sleep(0.1)
+
+        # If more waypoints need to be assigned, send the current waypoint to bidders and get their bids
+        if self.more_waypoints:
+            for bidder in self.registered_bots:
+                bid_topic = "/" + str(bidder) + "/make_bid"
+                rospy.wait_for_service(bid_topic)
+                try:
+                    waypoint_service = rospy.ServiceProxy(bid_topic, ServiceWaypoints)
+                    bid = waypoint_service(self.generated_waypoint)
+                    self.bots_bids[bidder] = bid.bids[0]
+                except rospy.ServiceException as e:
+                    pass
+            
+            # Get minimum bid and assign it to the winning bot
+            min_bid = 9999999999
+            min_bidder = ""
+            for bot, bot_bids in self.bots_bids.items():
+                if bot_bids < min_bid:
+                    min_bid = bot_bids
+                    min_bidder = bot
+            self.bot_assigned_waypoints[min_bidder] = msg.waypoint
+
+            # Once the bot has accepted through a service, determine if more are necessary and respond with relevant service message to generator
+            if self.award_task(min_bidder, self.generated_waypoint):
+                if len(self.bot_assigned_waypoints) == self.num_bots:
+                    self.more_waypoints = False
+                    for i in range(len(self.registered_bots)):
+                        message_line = "/" + str(self.registered_bots[i]) + "/initiation"
+                        _init_action_pub = rospy.Publisher(message_line, String, queue_size=self.num_bots)
+                        time.sleep(1)
+                        _init_action_pub.publish("begin")
+                    return ServiceRandomWaypointResponse("break")   # tell waypoint generator enough waypoints
+                else:
+                    return ServiceRandomWaypointResponse("success") # successful receival of waypoint, and we want more after
+        
+        return ServiceRandomWaypointResponse("unknown")
+
+    def award_task(self, bidder, waypoint):
+        """Notify bidder that wins the waypoint of their new task"""
+        award_topic = "/" + str(bidder) + "/award_bid"
+        
+        # Connect to the bot and send their new target
+        rospy.wait_for_service(award_topic)
+        try:
+            award_task_service = rospy.ServiceProxy(award_topic, ServiceAwardTask)
+            award_task_success = award_task_service(waypoint)
+            return award_task_success
+        except rospy.ServiceException as e:
+            pass
+        return False
+    
+    def get_tf_pos(self, bot_name):
+        """Get information from tf broadcaster in tf_coordination on world coordiantes of each follower"""
+        """Used to ensure all bots have successfully had their coordinates transformed for accepting registration"""
+        try:
+            (trans,rot) = self.listener.lookupTransform('/world', bot_name, rospy.Time(0))
+            quaternion = (rot[0],rot[1],rot[2],rot[3])
+            euler = tf.transformations.euler_from_quaternion(quaternion)
+            yaw = euler[2]
+            self.bot_locs[bot_name] = [trans[0], trans[1], yaw]      # convert and store to more easily implemented format
+            return True
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            pass
+        return False
+
+    def _handle_add_robot(self, request):
+        """Callback for subscriber handling robot regisration"""
+        if len(str(request.robotname)) > 0:
+            if self.get_tf_pos(request.robotname):  # only accept if the coordinates have been transformed to world
+                self.registered_bots.append(request.robotname)
+                return ServiceRegistrationResponse(True)  # service allows bidder to keep sending until success
+        return ServiceRegistrationResponse(False)
+
+def main():
+    """Main function."""
+    # number of bots is passed via stdin in launch file
+    num_bots = int(sys.argv[1])
+
+    # 1st. initialization of node.
+    rospy.init_node("auctioneer")
+
+    # Sleep for a few seconds to wait for the registration.
+    rospy.sleep(2)
+
+    # Initialization of the class 
+    auctioneer = Auctioneer(num_bots)
+
+    # If interrupted, send a stop command.
+    rospy.on_shutdown(auctioneer.stop)
+
+if __name__ == "__main__":
+    """Run the main function."""
+    main()
