@@ -1,6 +1,6 @@
 # Auction-based task allocation
 
-ROS package for robots to coordinate to cover specific locations in a common reference frame. To simplify the problem, you can assume that only one robot is the auctioneer and that robots bid on a single location independently. The auctioneer then assigns a task to robots following the sequential auction mechanism, until each task is allocated to a robot. The test is done in an empty world with 3 robots and the locations are randomly generated over a space of 10m x 10m
+ROS package for robots to coordinate to cover specific locations in a common reference frame. Assumes that only one robot is the auctioneer and that robots bid on a single location independently. The auctioneer then assigns a task to robots following the sequential auction mechanism, until each task is allocated to a robot. The test is done in an empty world with 3 robots and the locations are randomly generated over a space of 10m x 10m
 
 ## Requirements
 - ROS -- tested on Melodic, but other versions may work.
